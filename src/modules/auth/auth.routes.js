@@ -73,4 +73,26 @@ router.post("/logout", authenticate, asyncHandler(async (req, res) => {
   res.json({ message: "Toutes les sessions ont été révoquées." });
 }));
 
+// Route pour enregistrer le numéro d'appareil pour les notifications
+router.post('/fcm-token', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user.id; // L'identifiant de l'utilisateur connecté
+    const { fcmToken } = req.body; // Le numéro d'appareil envoyé par le téléphone
+
+    if (!fcmToken) {
+      return res.status(400).json({ error: "Le token de l'appareil est manquant." });
+    }
+
+    // On enregistre ce token dans la base de données Neon pour cet utilisateur
+    await pool.query(
+      "UPDATE users SET fcm_token = $1 WHERE id = $2",
+      [fcmToken, userId]
+    );
+
+    res.status(200).json({ message: "Appareil enregistré pour les notifications avec succès !" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
