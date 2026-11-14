@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SoliShare — Vérification Commerçants</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #F5F8F6; color: #111827; margin: 0; padding: 24px; }
+    .container { max-width: 960px; margin: 0 auto; }
+    h1 { color: #167A55; margin-bottom: 4px; }
+    .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-top: 16px; }
+    input { padding: 10px 12px; border: 1px solid #D1D5DB; border-radius: 8px; width: 260px; margin-right: 8px; }
+    button { padding: 9px 14px; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; }
+    .btn-primary { background: #167A55; color: white; }
+    .btn-danger { background: #B91C1C; color: white; }
+    .btn-neutral { background: #E5E7EB; color: #374151; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #E5E7EB; }
+    .badge { padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+    .ok { background: #DCFCE7; color: #166534; }
+    .wait { background: #FEF3C7; color: #92400E; }
+    .ban { background: #FEE2E2; color: #991B1B; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>SoliShare · Contrôle d'identité Commerçants</h1>
+    <p style="color:#4B5563;margin-top:0;">Validation des comptes professionnels avant autorisation de publication.</p>
+
+    <div id="loginBox" class="card">
+      <h3>Connexion Administrateur</h3>
+      <form id="loginForm">
+        <input id="email" type="email" placeholder="Email admin" value="admin@solishare.fr" required />
+        <input id="password" type="password" placeholder="Mot de passe" required />
+        <button id="loginBtn" type="submit" class="btn-primary">Se connecter</button>
+      </form>
+      <p id="loginErr" style="color:#B91C1C;font-size:13px;margin-top:8px;"></p>
+    </div>
+
+    <div id="dashboard" style="display:none;">
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center;">
+        <strong id="adminInfo">Connecté</strong>
+        <div>
+          <button id="refreshBtn" type="button" class="btn-neutral">Actualiser</button>
+          <button id="logoutBtn" type="button" class="btn-danger">Déconnexion</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Comptes Commerçants & Associations</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Établissement</th>
+              <th>SIRET & Contact</th>
+              <th>Statut</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="proRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = window.location.protocol === "file:" ? "http://localhost:4000/api" : "/api";
+    let token = localStorage.getItem("solishare_admin_token") || "";
+
+    async function api(path, opts = {}) {
+      const res = await fetch(API_BASE + path, {
+        ...opts,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: "Bearer " + token } : {})
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur serveur");
+      return data;
+    }
+
+    async function login(e) {
+      if (e) e.preventDefault();
+      const errEl = document.getElementById("loginErr");
+      errEl.textContent = "Connexion en cours...";
+      try {
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+        const data = await api("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+        if (data.user.role !== "admin") throw new Error("Accès réservé aux administrateurs.");
+        token = data.token;
+        localStorage.setItem("solishare_admin_token", token);
+        errEl.textContent = "";
+        init();
+      } catch (err) {
+        errEl.textContent = err.message === "Failed to fetch"
+          ? "Serveur inaccessible : vérifie que 'npm start' tourne sur le port 4000."
+          : err.message;
+      }
+    }
+
+    function logout() {
+      token = "";
+      localStorage.removeItem("solishare_admin_token");
+      document.getElementById("loginBox").style.display = "block";
+      document.getElementById("dashboard").style.display = "none";
+    }
+
+    async function setVerified(id, is_verified) {
+      await api(`/admin/users/${id}/verify`, { method: "PATCH", body: JSON.stringify({ is_verified }) });
+      loadOverview();
+    }
+
+    async function setActive(id, is_active) {
+      await api(`/admin/users/${id}/status`, { method: "PATCH", body: JSON.stringify({ is_active }) });
+      loadOverview();
+    }
+
+    async function loadOverview() {
+      const data = await api("/admin/overview");
+      const pros = data.users.filter((u) => u.role !== "particulier" && u.role !== "admin");
+      const tbody = document.getElementById("proRows");
+      tbody.innerHTML = pros.map((u) => `
+        <tr>
+          <td>
+            <strong>${u.full_name}</strong><br/>
+            <span style="font-size:12px;color:#6B7280;">${u.role} · ${u.business_address || "Adresse non renseignée"}</span>
+          </td>
+          <td>
+            ${u.siret ? `<a href="https://annuaire-entreprises.data.gouv.fr/entreprise/${u.siret}" target="_blank" style="color:#167A55;font-weight:700;">${u.siret} ↗</a>` : "<em>Aucun SIRET</em>"}<br/>
+            <span style="font-size:12px;color:#4B5563;">${u.email} ${u.phone ? "· " + u.phone : ""}</span>
+          </td>
+          <td>
+            ${!u.is_active ? '<span class="badge ban">Suspendu</span>' :
+              u.is_verified ? '<span class="badge ok">Vérifié</span>' : '<span class="badge wait">En attente</span>'}
+          </td>
+          <td style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${!u.is_verified
+              ? `<button class="btn-primary" data-action="verify" data-id="${u.id}" data-val="true">Valider</button>`
+              : `<button class="btn-neutral" data-action="verify" data-id="${u.id}" data-val="false">Retirer badge</button>`}
+            ${u.is_active
+              ? `<button class="btn-danger" data-action="active" data-id="${u.id}" data-val="false">Suspendre</button>`
+              : `<button class="btn-neutral" data-action="active" data-id="${u.id}" data-val="true">Réactiver</button>`}
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    async function init() {
+      if (!token) return;
+      try {
+        const me = await api("/auth/me");
+        if (me.user.role !== "admin") return logout();
+        document.getElementById("adminInfo").textContent = `Admin : ${me.user.full_name} (${me.user.email})`;
+        document.getElementById("loginBox").style.display = "none";
+        document.getElementById("dashboard").style.display = "block";
+        loadOverview();
+      } catch {
+        logout();
+      }
+    }
+
+    document.getElementById("loginForm").addEventListener("submit", login);
+    document.getElementById("refreshBtn").addEventListener("click", loadOverview);
+    document.getElementById("logoutBtn").addEventListener("click", logout);
+    document.getElementById("proRows").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-action]");
+      if (!btn) return;
+      const { action, id, val } = btn.dataset;
+      if (action === "verify") setVerified(id, val === "true");
+      if (action === "active") setActive(id, val === "true");
+    });
+
+    init();
+  </script>
+</body>
+</html>
