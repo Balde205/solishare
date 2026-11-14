@@ -13,7 +13,9 @@ const { notFound, errorHandler } = require("./middleware/errors");
 const app = express();
 const allowedOrigins = (process.env.CORS_ORIGINS || "").split(",").filter(Boolean);
 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false
+}));
 app.use(cors({
   origin(origin, cb) {
     if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return cb(null, true);
