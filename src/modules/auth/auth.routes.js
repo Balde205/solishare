@@ -74,7 +74,7 @@ router.post("/logout", authenticate, asyncHandler(async (req, res) => {
 }));
 
 // Route pour enregistrer le numéro d'appareil pour les notifications
-router.post('/fcm-token', verifyJwtToken, async (req, res) => {
+router.post('/fcm-token', authenticate, async (req, res) => {
   try {
     const userId = req.user.id; // L'identifiant de l'utilisateur connecté
     const { fcmToken } = req.body; // Le numéro d'appareil envoyé par le téléphone
