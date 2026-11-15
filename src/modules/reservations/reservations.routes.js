@@ -207,4 +207,4 @@ router.get("/:id", authenticate, asyncHandler(async (req, res) => {
   res.json({ reservation: rows[0] });
 }));
 
-module.exports = router;PS 
+module.exports = router;
