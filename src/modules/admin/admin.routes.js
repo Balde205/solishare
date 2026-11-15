@@ -28,13 +28,13 @@ router.get("/overview", asyncHandler(async (_req, res) => {
        FROM users
        ORDER BY created_at DESC`
     ),
-    pool.query(
-      `SELECT o.id, o.title, o.status, o.expires_at, o.created_at, u.full_name AS merchant_name
-       FROM offers o
-       JOIN users u ON u.id = o.merchant_id
-       ORDER BY o.created_at DESC
-       LIMIT 50`
-    )
+   pool.query(
+  `SELECT o.id, o.title, o.status, o.expires_at, o.created_at, u.full_name AS merchant_name
+   FROM offers o
+   JOIN users u ON u.id = o.owner_id
+   ORDER BY o.created_at DESC
+   LIMIT 50`
+)
   ]);
 
   res.json({
