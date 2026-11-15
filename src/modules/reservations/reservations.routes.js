@@ -4,7 +4,7 @@ const { z } = require("zod");
 const pool = require("../../db");
 const { authenticate, allowRoles } = require("../../middleware/auth");
 const asyncHandler = require("../../utils/asyncHandler");
-const admin = require("../../config/firebase"); // Utilise directement Firebase Admin configuré
+const admin = require("../../config/firebase");
 
 const uuidSchema = z.string().uuid();
 const uuidParamSchema = z.object({ id: z.string().uuid() });
@@ -179,7 +179,7 @@ router.post("/:id/cancel", authenticate, allowRoles("particulier"), asyncHandler
       await client.query("ROLLBACK");
       return res.status(404).json({ error: "Réservation introuvable ou non annulable." });
     }
-    await client.query("UPDATE reservations status='annulee' WHERE id=$1", [r.id]);
+    await client.query("UPDATE reservations SET status='annulee' WHERE id=$1", [r.id]);
     await client.query(
       "UPDATE offers SET status='disponible', updated_at=NOW() WHERE id=$1 AND status='reserve' AND expires_at>NOW()",
       [r.offer_id]
@@ -207,4 +207,4 @@ router.get("/:id", authenticate, asyncHandler(async (req, res) => {
   res.json({ reservation: rows[0] });
 }));
 
-module.exports = router;
+module.exports = router;PS 
