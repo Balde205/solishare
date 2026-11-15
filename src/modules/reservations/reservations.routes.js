@@ -4,6 +4,7 @@ const { z } = require("zod");
 const pool = require("../../db");
 const { authenticate, allowRoles } = require("../../middleware/auth");
 const asyncHandler = require("../../utils/asyncHandler");
+const { sendPushNotification } = require("../../services/notification.service");
 
 const uuidSchema = z.string().uuid();
 const uuidParamSchema = z.object({ id: z.string().uuid() });
@@ -35,7 +36,7 @@ router.post("/", authenticate, allowRoles("particulier"), asyncHandler(async (re
     }
     if (offer.owner_id === req.user.id) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ error: "Vous ne pouvez pas rÃ©server votre propre offre." });
+      return res.status(400).json({ error: "Vous ne pouvez pas réserver votre propre offre." });
     }
 
     const expiresAt = offer.expires_at;
@@ -50,6 +51,26 @@ router.post("/", authenticate, allowRoles("particulier"), asyncHandler(async (re
     await client.query("UPDATE reservations SET qr_token=$1 WHERE id=$2", [qr_token, reservation.id]);
     await client.query("UPDATE offers SET status='reserve', updated_at=NOW() WHERE id=$1", [offer.id]);
     await client.query("COMMIT");
+
+    // --- NOTIFICATION PUSH AU PROPRIÉTAIRE (NON BLOQUANT) ---
+    try {
+      const ownerResult = await pool.query(
+        "SELECT fcm_token FROM users WHERE id = $1",
+        [offer.owner_id]
+      );
+      const ownerToken = ownerResult.rows[0]?.fcm_token;
+      if (ownerToken) {
+        await sendPushNotification(
+          ownerToken,
+          "Nouvelle réservation ! 🛒",
+          `Votre offre "${offer.title}" vient d'être réservée.`
+        );
+      }
+    } catch (pushErr) {
+      console.log("Erreur d'envoi push (non bloquant) :", pushErr.message);
+    }
+    // -------------------------------------------------------
+
     res.status(201).json({
       reservation: { ...reservation, qr_token, offer_title: offer.title, address_label: offer.address_label }
     });
@@ -84,11 +105,11 @@ router.post("/validate-qr", authenticate, allowRoles("commercant", "association"
     const r = rows[0];
     if (!r || r.owner_id !== req.user.id) {
       await client.query("ROLLBACK");
-      return res.status(403).json({ error: "Vous ne pouvez pas valider cette rÃ©servation." });
+      return res.status(403).json({ error: "Vous ne pouvez pas valider cette réservation." });
     }
     if (r.status !== "active" || new Date(r.expires_at) <= new Date()) {
       await client.query("ROLLBACK");
-      return res.status(409).json({ error: "RÃ©servation inactive ou expirÃ©e." });
+      return res.status(409).json({ error: "Réservation inactive ou expirée." });
     }
     const expected = qrSignature(r.id, r.expires_at);
     if (!safeEqual(signature, expected) || d.qr_token !== r.qr_token) {
@@ -107,7 +128,7 @@ router.post("/validate-qr", authenticate, allowRoles("commercant", "association"
       [r.id, r.owner_id, r.receiver_id]
     );
     await client.query("COMMIT");
-    res.json({ message: "Remise confirmÃ©e.", offer_title: r.title });
+    res.json({ message: "Remise confirmée.", offer_title: r.title });
   } catch (e) {
     await client.query("ROLLBACK");
     throw e;
@@ -141,7 +162,7 @@ router.post("/:id/cancel", authenticate, allowRoles("particulier"), asyncHandler
     const r = rows[0];
     if (!r || r.receiver_id !== req.user.id || r.status !== "active") {
       await client.query("ROLLBACK");
-      return res.status(404).json({ error: "RÃ©servation introuvable ou non annulable." });
+      return res.status(404).json({ error: "Réservation introuvable ou non annulable." });
     }
     await client.query("UPDATE reservations SET status='annulee' WHERE id=$1", [r.id]);
     await client.query(
@@ -149,7 +170,7 @@ router.post("/:id/cancel", authenticate, allowRoles("particulier"), asyncHandler
       [r.offer_id]
     );
     await client.query("COMMIT");
-    res.json({ message: "RÃ©servation annulÃ©e." });
+    res.json({ message: "Réservation annulée." });
   } catch (e) {
     await client.query("ROLLBACK");
     throw e;
@@ -162,12 +183,12 @@ router.get("/:id", authenticate, asyncHandler(async (req, res) => {
   const { id } = uuidParamSchema.parse(req.params);
   const { rows } = await pool.query(
     `SELECT r.id,r.offer_id,r.receiver_id,r.status,r.expires_at,r.created_at,
-       r.qr_token,o.title AS offer_title,o.address_label
+        r.qr_token,o.title AS offer_title,o.address_label
      FROM reservations r JOIN offers o ON o.id=r.offer_id
      WHERE r.id=$1 AND (r.receiver_id=$2 OR o.owner_id=$2)`,
     [id, req.user.id]
   );
-  if (!rows[0]) return res.status(404).json({ error: "RÃ©servation introuvable." });
+  if (!rows[0]) return res.status(404).json({ error: "Réservation introuvable." });
   res.json({ reservation: rows[0] });
 }));
 
