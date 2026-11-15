@@ -64,7 +64,7 @@
   </div>
 
   <script>
-    const API_BASE = window.location.protocol === "file:" ? "http://localhost:4000/api" : "/api";
+    const API_BASE = "https://solishare.onrender.com/api";
     let token = localStorage.getItem("solishare_admin_token") || "";
 
     async function api(path, opts = {}) {

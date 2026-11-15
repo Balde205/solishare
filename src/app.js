@@ -1,3 +1,14 @@
+import * as Notifications from 'expo-notifications';
+
+// Permet d'afficher la notification même si l'application est ouverte
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
