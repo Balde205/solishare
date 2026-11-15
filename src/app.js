@@ -1,14 +1,4 @@
-import * as Notifications from 'expo-notifications';
-
-// Permet d'afficher la notification même si l'application est ouverte
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
-
+const path = require("path");
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -53,7 +43,6 @@ app.use((req, res, next) => {
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 300 }));
 
 app.get("/health", (req, res) => res.json({ status: "ok", service: "solishare-api" }));
-const path = require("path");
 app.use("/admin", express.static(path.join(__dirname, "..", "public")));
 app.use("/uploads", express.static(path.join(__dirname, "..", "public", "uploads")));
 app.use("/api/auth", rateLimit({ windowMs: 15 * 60 * 1000, limit: 30 }), authRoutes);
