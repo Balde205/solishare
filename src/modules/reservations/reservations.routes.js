@@ -4,10 +4,25 @@ const { z } = require("zod");
 const pool = require("../../db");
 const { authenticate, allowRoles } = require("../../middleware/auth");
 const asyncHandler = require("../../utils/asyncHandler");
-const { sendPushNotification } = require("../../services/notification.service");
+const admin = require("../../config/firebase"); // Utilise directement Firebase Admin configuré
 
 const uuidSchema = z.string().uuid();
 const uuidParamSchema = z.object({ id: z.string().uuid() });
+
+// Fonction interne pour envoyer la notification push
+async function sendPushNotification(fcmToken, title, body) {
+  if (!fcmToken) return;
+  const message = {
+    token: fcmToken,
+    notification: { title, body }
+  };
+  try {
+    await admin.messaging().send(message);
+    console.log("Notification push envoyée avec succès !");
+  } catch (error) {
+    console.error("Erreur d'envoi push :", error.message);
+  }
+}
 
 function qrSignature(reservationId, expiresAt) {
   return crypto.createHmac("sha256", process.env.QR_HMAC_SECRET)
@@ -164,7 +179,7 @@ router.post("/:id/cancel", authenticate, allowRoles("particulier"), asyncHandler
       await client.query("ROLLBACK");
       return res.status(404).json({ error: "Réservation introuvable ou non annulable." });
     }
-    await client.query("UPDATE reservations SET status='annulee' WHERE id=$1", [r.id]);
+    await client.query("UPDATE reservations status='annulee' WHERE id=$1", [r.id]);
     await client.query(
       "UPDATE offers SET status='disponible', updated_at=NOW() WHERE id=$1 AND status='reserve' AND expires_at>NOW()",
       [r.offer_id]
