@@ -1,11 +1,11 @@
-import { Router } from "express";
-import { pool } from "../db/pool.js";
-import { requireAuth } from "../middleware/auth.js";
+const express = require("express");
+const pool = require("../db/pool");
+const { authenticate } = require("../middleware/auth");
 
-const router = Router();
+const router = express.Router();
 
-// Récupérer les messages d'une réservation (accessible uniquement au donateur et au bénéficiaire)
-router.get("/:reservationId", requireAuth, async (req, res) => {
+// Récupérer les messages d'une réservation (donateur ou bénéficiaire uniquement)
+router.get("/:reservationId", authenticate, async (req, res) => {
   try {
     const { reservationId } = req.params;
     const userId = req.user.id;
@@ -44,7 +44,7 @@ router.get("/:reservationId", requireAuth, async (req, res) => {
 });
 
 // Envoyer un message sur une réservation active
-router.post("/:reservationId", requireAuth, async (req, res) => {
+router.post("/:reservationId", authenticate, async (req, res) => {
   try {
     const { reservationId } = req.params;
     const userId = req.user.id;
@@ -89,4 +89,4 @@ router.post("/:reservationId", requireAuth, async (req, res) => {
   }
 });
 
-export default router;
+module.exports = router;
