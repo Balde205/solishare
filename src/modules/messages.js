@@ -1,12 +1,15 @@
 const express = require("express");
-const pool = require("../db/pool");
+const pool = require("../db");
 const { authenticate } = require("../middleware/auth");
+const asyncHandler = require("../utils/asyncHandler");
 
 const router = express.Router();
 
 // Récupérer les messages d'une réservation (donateur ou bénéficiaire uniquement)
-router.get("/:reservationId", authenticate, async (req, res) => {
-  try {
+router.get(
+  "/:reservationId",
+  authenticate,
+  asyncHandler(async (req, res) => {
     const { reservationId } = req.params;
     const userId = req.user.id;
 
@@ -37,15 +40,14 @@ router.get("/:reservationId", authenticate, async (req, res) => {
     );
 
     res.json({ messages: rows });
-  } catch (err) {
-    console.error("Erreur GET /messages :", err);
-    res.status(500).json({ error: "Impossible de charger les messages." });
-  }
-});
+  })
+);
 
 // Envoyer un message sur une réservation active
-router.post("/:reservationId", authenticate, async (req, res) => {
-  try {
+router.post(
+  "/:reservationId",
+  authenticate,
+  asyncHandler(async (req, res) => {
     const { reservationId } = req.params;
     const userId = req.user.id;
     const content = String(req.body?.content || "").trim();
@@ -83,10 +85,7 @@ router.post("/:reservationId", authenticate, async (req, res) => {
     );
 
     res.status(201).json({ message: rows[0] });
-  } catch (err) {
-    console.error("Erreur POST /messages :", err);
-    res.status(500).json({ error: "Impossible d'envoyer le message." });
-  }
-});
+  })
+);
 
 module.exports = router;
