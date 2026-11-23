@@ -9,6 +9,7 @@ const notificationRoutes = require("./modules/notifications/notifications.routes
 const reservationRoutes = require("./modules/reservations/reservations.routes");
 const adminRoutes = require("./modules/admin/admin.routes");
 const reportRoutes = require("./modules/reports/reports.routes");
+const messageRoutes = require("./modules/messages");
 const { notFound, errorHandler } = require("./middleware/errors");
 
 const app = express();
@@ -51,6 +52,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/reservations", reservationRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/messages", messageRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
