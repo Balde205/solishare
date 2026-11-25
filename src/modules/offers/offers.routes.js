@@ -8,13 +8,15 @@ const pool = require("../../db");
 const { authenticate, allowRoles } = require("../../middleware/auth");
 const asyncHandler = require("../../utils/asyncHandler");
 
+const isPhase1C2COnly = () => String(process.env.PHASE1_C2C_ONLY || "false").toLowerCase() === "true";
+
 const uuidParamSchema = z.object({ id: z.string().uuid() });
 
 const createSchema = z.object({
   title: z.string().trim().min(3).max(120),
   description: z.string().trim().max(2000).optional().default(""),
   category: z.enum(["alimentaire", "materiel"]),
-  offer_type: z.enum(["don", "vente_flash"]),
+  offer_type: z.enum(["don", "vente_flash"]).default("don"),
   price_cents: z.number().int().min(0).default(0),
   quantity_label: z.string().trim().max(80).optional().default(""),
   photo_url: z.string().url().optional().nullable(),
@@ -26,6 +28,15 @@ const createSchema = z.object({
 
 router.post("/", authenticate, allowRoles("particulier", "commercant", "association"), asyncHandler(async (req, res) => {
   const d = createSchema.parse(req.body);
+
+  if (isPhase1C2COnly()) {
+    if (req.user.role !== "particulier") {
+      return res.status(403).json({ error: "Publication réservée aux particuliers en Phase 1." });
+    }
+    if (d.offer_type !== "don" || d.price_cents !== 0) {
+      return res.status(403).json({ error: "Seuls les dons gratuits entre particuliers sont autorisés en Phase 1." });
+    }
+  }
 
   if (req.user.role === "particulier" && d.offer_type !== "don") {
     return res.status(403).json({ error: "Un particulier ne peut publier que des dons gratuits." });
@@ -41,20 +52,23 @@ router.post("/", authenticate, allowRoles("particulier", "commercant", "associat
     }
     if (!uRows[0].is_verified) {
       return res.status(403).json({
-        error: "Compte professionnel en attente de vÃƒÆ’Ã‚Â©rification d'identitÃƒÆ’Ã‚Â© par l'ÃƒÆ’Ã‚Â©quipe SoliShare."
+        error: "Compte professionnel en attente de vérification d'identité par l'équipe SoliShare."
       });
     }
   }
 
   if (d.offer_type === "don" && d.price_cents !== 0) {
-    return res.status(400).json({ error: "Un don doit ÃƒÆ’Ã‚Âªtre gratuit." });
+    return res.status(400).json({ error: "Un don doit être gratuit." });
   }
-    if (Math.abs(d.latitude) < 0.0001 && Math.abs(d.longitude) < 0.0001) {
-    return res.status(400).json({ error: "CoordonnÃƒÂ©es GPS invalides (point nul)." });
+  if (Math.abs(d.latitude) < 0.0001 && Math.abs(d.longitude) < 0.0001) {
+    return res.status(400).json({ error: "Coordonnées GPS invalides (point nul)." });
   }
   if (new Date(d.expires_at) <= new Date()) {
-    return res.status(400).json({ error: "La date d'expiration doit ÃƒÆ’Ã‚Âªtre future." });
+    return res.status(400).json({ error: "La date d'expiration doit être future." });
   }
+
+  const finalOfferType = isPhase1C2COnly() ? "don" : d.offer_type;
+  const finalPriceCents = isPhase1C2COnly() ? 0 : d.price_cents;
 
   const { rows } = await pool.query(
     `INSERT INTO offers
@@ -64,8 +78,8 @@ router.post("/", authenticate, allowRoles("particulier", "commercant", "associat
        ST_SetSRID(ST_MakePoint($9,$10),4326)::geography,$11,$12)
      RETURNING id, title, category, offer_type, price_cents, quantity_label,
        photo_url, address_label, expires_at, status, created_at`,
-    [req.user.id, d.title, d.description, d.category, d.offer_type,
-     d.price_cents, d.quantity_label, d.photo_url, d.longitude, d.latitude,
+    [req.user.id, d.title, d.description, d.category, finalOfferType,
+     finalPriceCents, d.quantity_label, d.photo_url, d.longitude, d.latitude,
      d.address_label, d.expires_at]
   );
   res.status(201).json({ offer: rows[0] });
@@ -80,6 +94,9 @@ router.get("/", authenticate, asyncHandler(async (req, res) => {
 
   const params = [];
   const filters = ["o.status = 'disponible'", "o.expires_at > NOW()"];
+  if (isPhase1C2COnly()) {
+    filters.push("o.offer_type = 'don'", "o.price_cents = 0");
+  }
   if (q.category) {
     params.push(q.category);
     filters.push(`o.category = $${params.length}`);
@@ -110,10 +127,10 @@ router.get("/nearby", authenticate, asyncHandler(async (req, res) => {
   }).parse(req.query);
 
   const params = [q.longitude, q.latitude, q.radius_m];
-  let categorySql = "";
+  let extraSql = isPhase1C2COnly() ? " AND o.offer_type = 'don' AND o.price_cents = 0" : "";
   if (q.category) {
     params.push(q.category);
-    categorySql = ` AND o.category = $${params.length}`;
+    extraSql += ` AND o.category = $${params.length}`;
   }
   const { rows } = await pool.query(
     `SELECT o.id, o.owner_id, o.title, o.description, o.category, o.offer_type, o.price_cents,
@@ -125,7 +142,7 @@ router.get("/nearby", authenticate, asyncHandler(async (req, res) => {
      WHERE o.status = 'disponible' AND o.expires_at > NOW()
        AND ST_DWithin(o.position_geo,
          ST_SetSRID(ST_MakePoint($1,$2),4326)::geography, $3)
-       ${categorySql}
+       ${extraSql}
      ORDER BY distance_m ASC, o.expires_at ASC LIMIT 50`,
     params
   );
@@ -178,12 +195,12 @@ router.get("/stats/me", authenticate, asyncHandler(async (req, res) => {
   });
 }));
 
-// GÃƒÂ©ocodage via Base Adresse Nationale (BAN) - P1 Audit
+// Géocodage via Base Adresse Nationale (BAN) - P1 Audit
 router.get("/geocode", authenticate, asyncHandler(async (req, res) => {
   const { q } = z.object({ q: z.string().trim().min(3).max(200) }).parse(req.query);
   const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(q)}&limit=5`;
   const resp = await fetch(url);
-  if (!resp.ok) return res.status(502).json({ error: "Service de gÃƒÂ©ocodage indisponible." });
+  if (!resp.ok) return res.status(502).json({ error: "Service de géocodage indisponible." });
   const data = await resp.json();
   const results = (data.features || []).map((f) => ({
     label: f.properties.label,
@@ -196,7 +213,7 @@ router.get("/geocode", authenticate, asyncHandler(async (req, res) => {
   res.json({ results });
 }));
 
-// Upload photo sÃƒÂ©curisÃƒÂ© (2 Mo max, validation MIME + octets magiques) - P1 Audit
+// Upload photo sécurisé (2 Mo max, validation MIME + octets magiques) - P1 Audit
 const ALLOWED_MIMES = {
   "image/jpeg": { ext: "jpg", check: (b) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
   "image/png": { ext: "png", check: (b) => b.length >= 4 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
@@ -237,7 +254,7 @@ router.post(
       return res.status(400).json({ error: "Format image invalide (JPEG, PNG ou WEBP, 2 Mo max)." });
     }
     if (!spec.check(req.body)) {
-      return res.status(400).json({ error: "Signature binaire du fichier non conforme au type dÃƒÂ©clarÃƒÂ©." });
+      return res.status(400).json({ error: "Signature binaire du fichier non conforme au type déclaré." });
     }
     const filename = `${crypto.randomUUID()}.${spec.ext}`;
     const uploadDir = path.join(__dirname, "../../../public/uploads");

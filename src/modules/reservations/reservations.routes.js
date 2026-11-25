@@ -6,6 +6,8 @@ const { authenticate, allowRoles } = require("../../middleware/auth");
 const asyncHandler = require("../../utils/asyncHandler");
 const admin = require("../../config/firebase");
 
+const isPhase1C2COnly = () => String(process.env.PHASE1_C2C_ONLY || "false").toLowerCase() === "true";
+
 const uuidSchema = z.string().uuid();
 const uuidParamSchema = z.object({ id: z.string().uuid() });
 
@@ -48,6 +50,10 @@ router.post("/", authenticate, allowRoles("particulier"), asyncHandler(async (re
     if (!offer || offer.status !== "disponible" || new Date(offer.expires_at) <= new Date()) {
       await client.query("ROLLBACK");
       return res.status(409).json({ error: "Cette offre n'est plus disponible." });
+    }
+    if (isPhase1C2COnly() && (offer.offer_type !== "don" || Number(offer.price_cents) !== 0)) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ error: "Seuls les dons gratuits entre particuliers sont ouverts à la réservation en Phase 1." });
     }
     if (offer.owner_id === req.user.id) {
       await client.query("ROLLBACK");
@@ -97,7 +103,7 @@ router.post("/", authenticate, allowRoles("particulier"), asyncHandler(async (re
   }
 }));
 
-router.post("/validate-qr", authenticate, allowRoles("commercant", "association"), asyncHandler(async (req, res) => {
+router.post("/validate-qr", authenticate, allowRoles("particulier", "commercant", "association"), asyncHandler(async (req, res) => {
   const d = z.object({ qr_token: z.string().min(40).max(500) }).parse(req.body);
   const parts = d.qr_token.split(":");
   if (parts.length !== 2) {
